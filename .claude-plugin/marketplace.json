@@ -1,0 +1,9 @@
+{
+  "name": "claude-mods",
+  "owner": { "name": "sirassss" },
+  "plugins": [
+    { "name": "sudo-pane", "source": "./sudo-pane" },
+    { "name": "blast-radius", "source": "./blast-radius" },
+    { "name": "replay-theater", "source": "./replay-theater" }
+  ]
+}

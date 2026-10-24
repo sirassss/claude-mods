@@ -1,0 +1,5 @@
+{
+  "name": "sudo-pane",
+  "version": "0.1.0",
+  "description": "Hỏi sudo password ngay trên ô input khi Claude chạy lệnh có sudo; password đi qua SUDO_ASKPASS, không vào lệnh hay transcript."
+}
