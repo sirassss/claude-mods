@@ -7,7 +7,8 @@ import type { EngineInterface as Engine, Register, RenderInput } from 'claude-co
 // Password không bao giờ nằm trong lệnh, argv hay transcript.
 
 const DOT = '•'
-const SUDO = /(^|[\s;&|(`])sudo(\s|$)/
+const SUDO = /(^|[\s;&|(`/])sudo(\s|$)/
+const SUDO_BY_PATH = /\/sudo(\s|$)/
 const POLL_SECONDS = '0.2'
 const HOLD_LIMIT_MS = 5 * 60 * 1000
 const PANE = 'sudo-pane'
@@ -16,9 +17,17 @@ const STALE_MS = 20_000 // dài hơn timeout 15 s của bước kiểm password
 // ponytail: nhớ password trong RAM của module 15 phút như timestamp của sudo; muốn hỏi mỗi lần thì đặt 0
 const REMEMBER_MS = 15 * 60 * 1000
 
-// Password vào stdin, không qua argv. In ra thư mục chứa file.
+// sudo không có tty chỉ tự gọi askpass khi có DISPLAY (qua SSH thì không), nên wrapper
+// `sudo` đứng đầu PATH thêm -A. -A kỵ -S: thấy -S (có khi là của lệnh con, vd `ls -S`)
+// thì không thêm -A mà mượn DISPLAY, -S thật vẫn đọc stdin, còn không thì askpass vẫn chạy.
+const WRAPPER = `for a; do case $a in -S|--stdin|-[!-]*S*) DISPLAY="\${DISPLAY:-sudo-pane}" exec "$REAL" "$@";; esac; done
+exec "$REAL" -A "$@"
+`
+
+// Password vào stdin, không qua argv; wrapper là $1. In ra thư mục chứa file.
 const STASH = `umask 077; d="\${XDG_RUNTIME_DIR:-/tmp}/sudo-pane-$(id -u)"
-mkdir -p "$d" && cat > "$d/pw" && printf '#!/bin/sh\\ncat "%s/pw"\\n' "$d" > "$d/askpass" && chmod 700 "$d/askpass" && printf %s "$d"`
+mkdir -p "$d/bin" && cat > "$d/pw" && printf '#!/bin/sh\\ncat "%s/pw"\\n' "$d" > "$d/askpass" && chmod 700 "$d/askpass" &&
+{ printf '#!/bin/sh\\nREAL=%s\\n' "$(command -v sudo)"; printf %s "$1"; } > "$d/bin/sudo" && chmod 700 "$d/bin/sudo" && printf %s "$d"`
 
 type Held = {
   command: string
@@ -60,13 +69,15 @@ export const register: Register = on => {
     }
     remembered = { pw, until: now + REMEMBER_MS }
 
-    const stash = await $.process.run(['sh', '-c', STASH], { stdin: pw, timeoutMs: 5000 })
+    const stash = await $.process.run(['sh', '-c', STASH, 'sh', WRAPPER], { stdin: pw, timeoutMs: 5000 })
     if (stash.exitCode !== 0) return { deny: `sudo-pane: không ghi được file askpass: ${stash.stderr.trim()}` }
     const dir = stash.stdout
+    // `/usr/bin/sudo` không đi qua PATH nên không gặp wrapper; DISPLAY lọt vào cả lệnh, chấp nhận.
+    const display = SUDO_BY_PATH.test(e.command) ? `export DISPLAY="\${DISPLAY:-sudo-pane}"\n` : ''
 
     let isBackground = false
     try {
-      const ran = await next({ ...e, command: `export SUDO_ASKPASS='${dir}/askpass'\n${e.command}` })
+      const ran = await next({ ...e, command: `export SUDO_ASKPASS='${dir}/askpass' PATH='${dir}/bin':"$PATH"\n${display}${e.command}` })
       isBackground = (ran.result as { backgroundTaskId?: string } | undefined)?.backgroundTaskId !== undefined
       return ran
     } finally {

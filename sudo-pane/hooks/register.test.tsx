@@ -117,7 +117,9 @@ test('sudo command: hỏi trong pane, sai thì hỏi lại, đúng thì chạy v
 
   const result = await call
   expect(result.deny).toBeUndefined()
-  expect(commands[1]).toBe("export SUDO_ASKPASS='/run/user/1/sudo-pane-1/askpass'\nsudo apt update")
+  expect(commands[1]).toBe(
+    "export SUDO_ASKPASS='/run/user/1/sudo-pane-1/askpass' PATH='/run/user/1/sudo-pane-1/bin':\"$PATH\"\nsudo apt update",
+  )
   expect(stashed).toEqual(['hunter2'])
   expect(wiped).toEqual(['-f /run/user/1/sudo-pane-1/pw'])
   expect(JSON.stringify(commands)).not.toContain('hunter2')
@@ -126,4 +128,8 @@ test('sudo command: hỏi trong pane, sai thì hỏi lại, đúng thì chạy v
   // lần sau trong 15 phút: không hỏi nữa
   await $.tool.call({ tool: 'Bash', command: 'sudo true' })
   expect(commands[2]).toContain('sudo true')
+
+  // gọi bằng đường dẫn tuyệt đối thì không qua wrapper: mượn DISPLAY
+  await $.tool.call({ tool: 'Bash', command: '/usr/bin/sudo true' })
+  expect(commands[3]).toContain('export DISPLAY="${DISPLAY:-sudo-pane}"\n/usr/bin/sudo true')
 })
